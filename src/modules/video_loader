@@ -1,0 +1,107 @@
+import cv2
+import os
+
+class VideoStreamHandler:
+    """
+    Handles video ingestion, frame decoding/downscaling, 
+    subtle HUD telemetry rendering, and video writing.
+    """
+    def __init__(self, video_path: str, output_path: str = None, target_width: int = 1280, target_height: int = 720):
+        self.video_path = video_path
+        self.output_path = output_path
+        self.target_w = target_width
+        self.target_h = target_height
+        
+        if not os.path.exists(video_path):
+            raise FileNotFoundError(f"[ERROR] Input video not found at: {video_path}")
+            
+        self.cap = cv2.VideoCapture(video_path)
+        if not self.cap.isOpened():
+            raise RuntimeError(f"[ERROR] Unable to open video file: {video_path}")
+            
+        # Raw Video Metadata
+        self.raw_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.raw_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+        self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        print(f"[INFO] Ingested Source Video:")
+        print(f"       ├── Raw Resolution : {self.raw_width}x{self.raw_height}")
+        print(f"       ├── Target Process : {self.target_w}x{self.target_h}")
+        print(f"       ├── FPS            : {self.fps:.2f}")
+        print(f"       └── Total Frames   : {self.total_frames}")
+
+        self.writer = None
+        if self.output_path:
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
+            self.writer = cv2.VideoWriter(
+                self.output_path, fourcc, self.fps, (self.target_w, self.target_h)
+            )
+
+    def read_frame(self):
+        """Reads and downscales the next frame to target processing resolution."""
+        ret, frame = self.cap.read()
+        if not ret:
+            return False, None
+        
+        # Resize high-res inputs (e.g., 4K) to 720p for optimized processing
+        resized_frame = cv2.resize(frame, (self.target_w, self.target_h), interpolation=cv2.INTER_AREA)
+        return True, resized_frame
+
+    def draw_subtle_hud(self, frame: cv2.Mat, frame_idx: int, status_text: str = "SYS ONLINE") -> cv2.Mat:
+        """
+        Renders a subtle, OEM-style ADAS telemetry status bar at the top of the frame.
+        """
+        overlay = frame.copy()
+        
+        # Subtle dark translucent top bar
+        cv2.rectangle(overlay, (0, 0), (self.target_w, 40), (15, 15, 15), -1)
+        # Apply 40% transparency blend
+        cv2.addWeighted(overlay, 0.60, frame, 0.40, 0, frame)
+
+        # Thin green status baseline
+        cv2.line(frame, (0, 40), (self.target_w, 40), (0, 200, 100), 1)
+
+        # Clean Typography Overlay
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(frame, "MONOCULAR 3D ADAS", (20, 26), font, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(frame, f"STATUS: {status_text}", (280, 26), font, 0.45, (0, 220, 120), 1, cv2.LINE_AA)
+        
+        frame_progress = f"FRAME: {frame_idx}/{self.total_frames}"
+        cv2.putText(frame, frame_progress, (self.target_w - 200, 26), font, 0.45, (200, 200, 200), 1, cv2.LINE_AA)
+
+        return frame
+
+    def write_frame(self, frame: cv2.Mat):
+        if self.writer:
+            self.writer.write(frame)
+
+    def release(self):
+        self.cap.release()
+        if self.writer:
+            self.writer.release()
+        cv2.destroyAllWindows()
+        print("[INFO] Video resources released successfully.")
+
+
+if __name__ == "__main__":
+    print("[TEST] Executing Module 0 standalone verification...")
+    input_video = "data/input/sample_dashcam.mp4"
+    output_video = "data/output/module0_test_output.mp4"
+
+    stream = VideoStreamHandler(video_path=input_video, output_path=output_video)
+    
+    frame_count = 0
+    while True:
+        ret, frame = stream.read_frame()
+        if not ret:
+            break
+        
+        frame_count += 1
+        # Apply clean status overlay
+        annotated_frame = stream.draw_subtle_hud(frame, frame_count, status_text="M0: INGESTION ACTIVE")
+        stream.write_frame(annotated_frame)
+
+    stream.release()
+    print(f"[SUCCESS] Processed {frame_count} frames. Clean test output written to: {output_video}")
