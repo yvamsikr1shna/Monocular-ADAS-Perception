@@ -1,4 +1,4 @@
-# Monocular ADAS Perception Pipeline
+# Monocular ADAS Perception Pipeline 
 
 A modular, real-time Monocular Advanced Driver Assistance System (ADAS) perception pipeline engineered in Python, OpenCV, PyTorch, and YOLOv8 with ByteTRACK.
 
